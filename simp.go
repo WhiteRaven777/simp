@@ -15,9 +15,9 @@ type DB struct {
 	err error
 }
 
-// New returns a new * DB.
-// If error, error is set in * DB.err.
-// You can get * DB.err with * DB.Error ().
+// New returns a new *DB.
+// If error, error is set in *DB.err.
+// You can get *DB.err with *DB.Error ().
 func New(dns string) *DB {
 	if db, err := sql.Open("mysql", dns); err != nil {
 		return &DB{err: err}
@@ -28,16 +28,15 @@ func New(dns string) *DB {
 
 // Begin starts transaction.
 func (db *DB) Begin() error {
-	if db.err == nil {
-		if tx, err := db.db.Begin(); err != nil {
-			db.err = err
-		} else {
-			db.mx.Lock()
-			defer db.mx.Unlock()
-			db.tx = tx
-		}
+	var tx *sql.Tx
+	tx, db.err = db.db.Begin()
+	if db.err != nil {
+		return db.err
 	}
-	return db.err
+	db.mx.Lock()
+	defer db.mx.Unlock()
+	db.tx = tx
+	return nil
 }
 
 // Close closes database.
@@ -50,17 +49,12 @@ func (db *DB) Close() {
 func (db *DB) Commit() error {
 	db.mx.Lock()
 	defer db.mx.Unlock()
-	switch {
-	case db.tx == nil:
-		db.err = errors.New("The transaction has not been started or has already been committed or rolled back.")
-	case db.err == nil:
-		if err := db.tx.Commit(); err != nil {
-			db.err = err
-		} else {
-			db.tx = nil
-		}
+	if db.tx == nil {
+		return errors.New("The transaction has not been started or has already been committed or rolled back.")
 	}
-	return db.err
+	err := db.tx.Commit()
+	db.tx = nil
+	return err
 }
 
 // Rollback rolls back transaction.
@@ -68,39 +62,42 @@ func (db *DB) Commit() error {
 func (db *DB) Rollback() error {
 	db.mx.Lock()
 	defer db.mx.Unlock()
-	switch {
-	case db.tx == nil:
-		db.err = errors.New("The transaction has not been started or has already been committed or rolled back.")
-	case db.err == nil:
-		if err := db.tx.Rollback(); err != nil {
-			db.err = err
-		} else {
-			db.tx = nil
-		}
+	if db.tx == nil {
+		return errors.New("The transaction has not been started or has already been committed or rolled back.")
 	}
-	return db.err
+	err := db.tx.Rollback()
+	db.tx = nil
+	return err
 }
 
 // Exec executes a prepared statement with the specified arguments.
 // And this method returns a Result summarizing the effect of the statement.
-func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (db *DB) Exec(query string, args ...interface{}) (ret sql.Result, err error) {
+	db.mx.Lock()
+	defer db.mx.Unlock()
+
 	if db.err != nil {
-		return nil, db.err
+		return ret, db.err
 	}
+
 	switch db.tx {
 	case nil:
 		return db.db.Exec(query, args...)
 	default:
-		return db.db.Exec(query, args...)
+		return db.tx.Exec(query, args...)
 	}
 }
 
 // The query executes a prepared query statement with the specified arguments
 // and returns the query result as *sql.Rows.
-func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (db *DB) Query(query string, args ...interface{}) (ret *sql.Rows, err error) {
+	db.mx.Lock()
+	defer db.mx.Unlock()
+
 	if db.err != nil {
-		return nil, db.err
+		return ret, db.err
 	}
+
 	switch db.tx {
 	case nil:
 		return db.db.Query(query, args...)
@@ -112,10 +109,14 @@ func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
 // QueryRow executes a prepared query statement with the specified arguments.
 // Scans the first selected line and returns it as *sql.Row.
 // It will be destroyed after that.
-func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
+func (db *DB) QueryRow(query string, args ...interface{}) (ret *sql.Row) {
+	db.mx.Lock()
+	defer db.mx.Unlock()
+
 	if db.err != nil {
-		return nil
+		return ret
 	}
+
 	switch db.tx {
 	case nil:
 		return db.db.QueryRow(query, args...)
@@ -152,4 +153,15 @@ func (db *DB) SetMaxIdleConns(n int) {
 // The default is 0 (unlimited).
 func (db *DB) SetMaxOpenConns(n int) {
 	db.db.SetMaxOpenConns(n)
+}
+
+// Prepare creates a prepared statement for later queries or executions.
+func (db *DB) Prepare(query string, args ...interface{}) (*sql.Stmt, error) {
+	db.mx.Lock()
+	defer db.mx.Unlock()
+	if db.tx == nil {
+		return db.db.Prepare(query)
+	} else {
+		return db.tx.Prepare(query)
+	}
 }
