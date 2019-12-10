@@ -3,9 +3,126 @@ package simp
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
+
+type DriverName string
+
+const (
+	MySQL      = DriverName("mysql")
+	PostgreSQL = DriverName("postgres")
+
+	defaultLocalAddress = "127.0.0.1"
+	mysqlDefaultPort    = 3306
+	postgresDefaultPort = 5432
+)
+
+func (dn DriverName) String() string {
+	return string(dn)
+}
+
+type Dsn string
+type DsnConf struct {
+	UserName string
+	Password string
+	Protocol string
+	Address  string
+	Port     int
+	DbName   string
+	Params   map[string]string
+}
+
+func (dsn Dsn) String() string {
+	return string(dsn)
+}
+
+func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
+	if len(dc.UserName) == 0 {
+		return "", errors.New("UserName is Empty")
+	} else if len(dc.Password) == 0 {
+		return "", errors.New("Password is Empty")
+	} else if len(dc.DbName) == 0 {
+		return "", errors.New("DbName is Empty")
+	}
+	switch dn {
+	case MySQL:
+		return Dsn(fmt.Sprintf(
+			"%s:%s@%s(%s:%d)/%s%s",
+			dc.UserName,
+			dc.Password,
+			func() string {
+				if len(dc.Protocol) == 0 {
+					return "tcp"
+				} else {
+					return dc.Protocol
+				}
+			}(),
+			func() string {
+				if len(dc.Address) == 0 {
+					return defaultLocalAddress
+				} else {
+					return dc.Address
+				}
+			}(),
+			func() int {
+				switch {
+				case dc.Port == 0:
+					return mysqlDefaultPort
+				default:
+					return dc.Port
+				}
+			}(),
+			dc.DbName,
+			func() string {
+				var buf string
+				if len(dc.Params) > 0 {
+					for k, v := range dc.Params {
+						buf += "&" + k + "=" + v
+					}
+					buf = strings.Replace(buf, "&", "?", 1)
+				}
+				return buf
+			}(),
+		)), nil
+	case PostgreSQL:
+		return Dsn(fmt.Sprintf(
+			"postgres://%s:%s@%s:%d/%s%s",
+			dc.UserName,
+			dc.Password,
+			func() string {
+				if len(dc.Address) == 0 {
+					return defaultLocalAddress
+				} else {
+					return dc.Address
+				}
+			}(),
+			func() int {
+				switch {
+				case dc.Port == 0:
+					return postgresDefaultPort
+				default:
+					return dc.Port
+				}
+			}(),
+			dc.DbName,
+			func() string {
+				var buf string
+				if len(dc.Params) > 0 {
+					for k, v := range dc.Params {
+						buf += "&" + k + "=" + v
+					}
+					buf = strings.Replace(buf, "&", "?", 1)
+				}
+				return buf
+			}(),
+		)), nil
+	default:
+		return "", errors.New("undefined driver name was used")
+	}
+}
 
 // DB is a database object.
 type DB struct {
@@ -18,12 +135,19 @@ type DB struct {
 // New returns a new *DB.
 // If error, error is set in *DB.err.
 // You can get *DB.err with *DB.Error ().
-func New(dns string) *DB {
-	if db, err := sql.Open("mysql", dns); err != nil {
+func New(dn DriverName, dsn Dsn) *DB {
+	if db, err := sql.Open(dn.String(), dsn.String()); err != nil {
 		return &DB{err: err}
 	} else {
 		return &DB{db: db}
 	}
+}
+
+// Ping will check if it can connect to the specified database.
+func (db *DB) Ping() error {
+	db.mx.Lock()
+	defer db.mx.Unlock()
+	return db.db.Ping()
 }
 
 // Begin starts transaction.
