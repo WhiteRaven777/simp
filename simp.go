@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -34,6 +34,17 @@ type DsnConf struct {
 	Port     int
 	DbName   string
 	Params   map[string]string
+}
+
+func encodeParams(p map[string]string) (ret string) {
+	vs := make(url.Values)
+	for k, v := range p {
+		vs[k] = append(vs[k], v)
+	}
+	if ret = vs.Encode(); len(ret) > 0 {
+		ret = "?" + ret
+	}
+	return
 }
 
 // String returns the converted string from of Dsn.
@@ -86,16 +97,7 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 				}
 			}(),
 			dc.DbName,
-			func() string {
-				var buf string
-				if len(dc.Params) > 0 {
-					for k, v := range dc.Params {
-						buf += "&" + k + "=" + v
-					}
-					buf = strings.Replace(buf, "&", "?", 1)
-				}
-				return buf
-			}(),
+			encodeParams(dc.Params),
 		)), nil
 	case PostgreSQL:
 		return Dsn(fmt.Sprintf(
@@ -123,16 +125,7 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 				}
 			}(),
 			dc.DbName,
-			func() string {
-				var buf string
-				if len(dc.Params) > 0 {
-					for k, v := range dc.Params {
-						buf += "&" + k + "=" + v
-					}
-					buf = strings.Replace(buf, "&", "?", 1)
-				}
-				return buf
-			}(),
+			encodeParams(dc.Params),
 		)), nil
 	default:
 		return "", errors.New("undefined driver name was used")
