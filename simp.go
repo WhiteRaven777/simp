@@ -20,6 +20,7 @@ const (
 	postgresDefaultPort = 5432
 )
 
+// String returns the converted string from of DriverName.
 func (dn DriverName) String() string {
 	return string(dn)
 }
@@ -35,10 +36,12 @@ type DsnConf struct {
 	Params   map[string]string
 }
 
+// String returns the converted string from of Dsn.
 func (dsn Dsn) String() string {
 	return string(dsn)
 }
 
+// DSN returns Dsn based on DsnConf and DriverName.
 func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 	switch {
 	case len(dc.UserName) == 0:
