@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,29 @@ type DsnConf struct {
 	Port     int
 	DbName   string
 	Params   map[string]string
+}
+
+func encodeParams(p map[string]string) (ret string) {
+	ks := make([]string, 0, len(p))
+	for k := range p {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+
+	var buf strings.Builder
+	for _, k := range ks {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+		buf.WriteString(k)
+		buf.WriteByte('=')
+		buf.WriteString(p[k])
+	}
+
+	if buf.Len() > 0 {
+		ret = "?" + buf.String()
+	}
+	return
 }
 
 // String returns the converted string from of Dsn.
@@ -86,16 +110,7 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 				}
 			}(),
 			dc.DbName,
-			func() string {
-				var buf string
-				if len(dc.Params) > 0 {
-					for k, v := range dc.Params {
-						buf += "&" + k + "=" + v
-					}
-					buf = strings.Replace(buf, "&", "?", 1)
-				}
-				return buf
-			}(),
+			encodeParams(dc.Params),
 		)), nil
 	case PostgreSQL:
 		return Dsn(fmt.Sprintf(
@@ -123,16 +138,7 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 				}
 			}(),
 			dc.DbName,
-			func() string {
-				var buf string
-				if len(dc.Params) > 0 {
-					for k, v := range dc.Params {
-						buf += "&" + k + "=" + v
-					}
-					buf = strings.Replace(buf, "&", "?", 1)
-				}
-				return buf
-			}(),
+			encodeParams(dc.Params),
 		)), nil
 	default:
 		return "", errors.New("undefined driver name was used")
