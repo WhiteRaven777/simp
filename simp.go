@@ -40,19 +40,26 @@ func (dsn Dsn) String() string {
 }
 
 func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
-	if len(dc.UserName) == 0 {
+	switch {
+	case len(dc.UserName) == 0:
 		return "", errors.New("UserName is Empty")
-	} else if len(dc.Password) == 0 {
+	case (len(dc.Address) > 0 && dc.Address != "localhost" && dc.Address != defaultLocalAddress) &&
+		len(dc.Password) == 0:
 		return "", errors.New("Password is Empty")
-	} else if len(dc.DbName) == 0 {
+	case len(dc.DbName) == 0:
 		return "", errors.New("DbName is Empty")
 	}
 	switch dn {
 	case MySQL:
 		return Dsn(fmt.Sprintf(
-			"%s:%s@%s(%s:%d)/%s%s",
+			"%s%s@%s(%s:%d)/%s%s",
 			dc.UserName,
-			dc.Password,
+			func() string {
+				if len(dc.Password) > 0 {
+					return ":" + dc.Password
+				}
+				return ""
+			}(),
 			func() string {
 				if len(dc.Protocol) == 0 {
 					return "tcp"
@@ -89,9 +96,14 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 		)), nil
 	case PostgreSQL:
 		return Dsn(fmt.Sprintf(
-			"postgres://%s:%s@%s:%d/%s%s",
+			"postgres://%s%s@%s:%d/%s%s",
 			dc.UserName,
-			dc.Password,
+			func() string {
+				if len(dc.Password) > 0 {
+					return ":" + dc.Password
+				}
+				return ""
+			}(),
 			func() string {
 				if len(dc.Address) == 0 {
 					return defaultLocalAddress
