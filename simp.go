@@ -73,8 +73,6 @@ func (dc DsnConf) DSN(dn DriverName) (dsn Dsn, err error) {
 	case (len(dc.Address) > 0 && dc.Address != "localhost" && dc.Address != defaultLocalAddress) &&
 		len(dc.Password) == 0:
 		return "", errors.New("Password is Empty")
-	case len(dc.DbName) == 0:
-		return "", errors.New("DbName is Empty")
 	}
 	switch dn {
 	case MySQL:
