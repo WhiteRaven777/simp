@@ -162,6 +162,14 @@ func New(dn DriverName, dsn Dsn) *DB {
 	}
 }
 
+//  DB returns a *sql.DB bound to the DB.
+func (db *DB) DB() (ret *sql.DB) {
+	if db.err == nil {
+		ret = db.db
+	}
+	return
+}
+
 // Ping will check if it can connect to the specified database.
 func (db *DB) Ping() error {
 	db.mx.Lock()
